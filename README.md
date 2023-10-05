@@ -1,13 +1,6 @@
-## Foundry
+## About
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
-
-Foundry consists of:
-
--   **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
--   **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
--   **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
--   **Chisel**: Fast, utilitarian, and verbose solidity REPL.
+**This project is meant to be a Battle War. Where every wallet address can maintain a single army only. Every army have defenders, attackers, machines, raiders and health. Every day you can get daily rewards and using this rewards you can build your army. You can attack other army for single time in a day. For every winning or losing battle the win count and lose count is tracked, for winning you can get the rewards and **for every 5 wins you can get a NFT token**. For attacking in battle you army also lost based on opponent army. If you are buying army in bulk can reduce the amount and you can also buy army by paying ethers also.Your battle data are tracked in every attacks.**
 
 ## Documentation
 
