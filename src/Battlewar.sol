@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.18;
+pragma solidity ^0.8.21;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
@@ -7,7 +7,7 @@ import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "./TestDateTime.sol";
 
-contract CreateBattleArmy is TestDateTime, ERC721URIStorage, ReentrancyGuard, Ownable {
+contract BattleWar is TestDateTime, ERC721URIStorage, ReentrancyGuard, Ownable {
     using Counters for Counters.Counter;
 
     Counters.Counter private _tokenIdCounter;
@@ -25,13 +25,21 @@ contract CreateBattleArmy is TestDateTime, ERC721URIStorage, ReentrancyGuard, Ow
     error battleWar__NotEnoughArmyToAttack();
     error battleWar__LastAttackIsLessThanOneDay();
     error battleWar__NotEnoughTargetArmy();
+    error BattelWar__YouDoNotHaveArmy();
+    error BattleWar__ZeroPrice();
 
     // events
-    event createdArmyEvent(address indexed owner, string name);
-    event destroyArmyEvent(address indexed owner);
+    event createdArmyEvent(address owner, string name);
+    event attackArmyEvent(
+        address owner, 
+        address target, 
+        address winner, 
+        uint256 winningAmount, 
+        uint256 attackCount
+    );
     event buyArmyEvent(
-        address indexed owner,
-        uint256 indexed amount,
+        address owner,
+        uint256 amount,
         uint16 _defenders,
         uint16 _attackers,
         uint16 _machines,
@@ -59,7 +67,7 @@ contract CreateBattleArmy is TestDateTime, ERC721URIStorage, ReentrancyGuard, Ow
     uint256 private constant DAILY_REWARD_AMOUNT = 200;
     uint256 private constant MAXIMUM_PLAYERS = 50000;
     uint256 private constant OFFER_AMOUNT = 5000;
-    uint256 private constant ETHER_OFFER_AMOUNT = 10 * 1e18;
+    uint256 private i_ETHER_OFFER_AMOUNT = 10 ether;
     uint256 private constant ATTACK_AMOUNT_FEE = 250;
     uint256 private constant WINNING_AMOUNT_FOR_OWNER = 1250;
     uint256 private constant WINNING_AMOUNT_FOR_TARGET__OWNER = 500;
@@ -69,6 +77,7 @@ contract CreateBattleArmy is TestDateTime, ERC721URIStorage, ReentrancyGuard, Ow
     mapping(address owner => address[] targets) private ownerAttackedList;
     mapping(address attacker => address[] owners) private attackedByOwners;
     address[] private s_attackers;
+    address[] private s_winners;
     address[] private s_targets;
     string[] private s_timeStamps;
 
@@ -80,11 +89,13 @@ contract CreateBattleArmy is TestDateTime, ERC721URIStorage, ReentrancyGuard, Ow
 
     // modifiers
     modifier armyNotCreated() {
-        require(createdArmyOrNot[msg.sender], "you do not have any army");
+        if(!createdArmyOrNot[msg.sender]) {
+            revert BattelWar__YouDoNotHaveArmy();
+        }
         _;
     }
 
-    constructor() ERC721("BattelWar", "BWAR") {}
+    constructor() ERC721("BattleWar", "BWAR") {}
 
     /* ---------------------------- PAYABLE FUNCTIONS ------------------------- */
     receive() external payable {}
@@ -104,7 +115,7 @@ contract CreateBattleArmy is TestDateTime, ERC721URIStorage, ReentrancyGuard, Ow
     }
 
     /* ---------------------------- WITHDRAW AMOUNT ---------------------------- */
-    function withdrawAmount(address _owner) public payable onlyOwner {
+    function withdrawAmount(address _owner) public payable nonReentrant onlyOwner {
         uint256 balance = address(this).balance;
         payable(_owner).transfer(balance);
     }
@@ -146,7 +157,6 @@ contract CreateBattleArmy is TestDateTime, ERC721URIStorage, ReentrancyGuard, Ow
         ownerArmy[msg.sender] = army("", 0, 0, 0, 0, 0, 0, 0, 0, 0);
         createdArmyOrNot[msg.sender] = false;
         _totalArmyCount.decrement();
-        emit destroyArmyEvent(msg.sender);
         return true;
     }
 
@@ -187,6 +197,7 @@ contract CreateBattleArmy is TestDateTime, ERC721URIStorage, ReentrancyGuard, Ow
         myArmy.machines += _machines;
         myArmy.raiders += _raiders;
         myArmy.health += _health;
+        emit buyArmyEvent(msg.sender, totalCost, _defenders, _attackers, _machines, _raiders, _health);
         return true;
     }
 
@@ -219,11 +230,20 @@ contract CreateBattleArmy is TestDateTime, ERC721URIStorage, ReentrancyGuard, Ow
         myArmy.machines += QUANTITY_OF_PLAYERS;
         myArmy.raiders += QUANTITY_OF_PLAYERS;
         myArmy.health += QUANTITY_OF_PLAYERS;
+        emit buyArmyEvent(
+            msg.sender,
+            OFFER_AMOUNT,
+            QUANTITY_OF_PLAYERS,
+            QUANTITY_OF_PLAYERS,
+            QUANTITY_OF_PLAYERS,
+            QUANTITY_OF_PLAYERS,
+            QUANTITY_OF_PLAYERS
+        );
         return true;
     }
 
     /* ---------------------------- BUY ARMY WITH ETHERS ---------------------------- */
-    function buyArmyWithEthers() external payable returns (bool) {
+    function buyArmyWithEthers() public payable armyNotCreated nonReentrant {
         if (msg.sender == address(0)) {
             revert battleWar__ZeroAddressError();
         }
@@ -237,8 +257,8 @@ contract CreateBattleArmy is TestDateTime, ERC721URIStorage, ReentrancyGuard, Ow
         ) {
             revert battleWar__ExceedAountOfPlayers();
         }
-        if (msg.value < ETHER_OFFER_AMOUNT) {
-            // taking 15 ethers for buying army
+        if (msg.value != i_ETHER_OFFER_AMOUNT) {
+            // taking 10 ethers for buying army
             revert battleWar__NotEnoughMoney();
         }
         payable(address(this)).transfer(msg.value);
@@ -248,11 +268,19 @@ contract CreateBattleArmy is TestDateTime, ERC721URIStorage, ReentrancyGuard, Ow
         myArmy.machines += QUANTITY_OF_PLAYERS;
         myArmy.raiders += QUANTITY_OF_PLAYERS;
         myArmy.health += QUANTITY_OF_PLAYERS;
-        return true;
+        emit buyArmyEvent(
+            msg.sender,
+            msg.value,
+            QUANTITY_OF_PLAYERS,
+            QUANTITY_OF_PLAYERS,
+            QUANTITY_OF_PLAYERS,
+            QUANTITY_OF_PLAYERS,
+            QUANTITY_OF_PLAYERS
+        );
     }
 
     /* ---------------------------- ATTACK ARMY ---------------------------- */
-    function getCount(address _targetArmyOwner) private view returns (uint256) {
+    function getCount(address _targetArmyOwner) public view returns (uint256) {
         army memory myArmy = ownerArmy[msg.sender];
         army memory targetArmy = ownerArmy[_targetArmyOwner];
         uint256 count = 1; // if all are equal there is chance to win 60%
@@ -267,7 +295,7 @@ contract CreateBattleArmy is TestDateTime, ERC721URIStorage, ReentrancyGuard, Ow
         return count;
     }
 
-    function attackArmy(address _targetArmyOwner) external nonReentrant armyNotCreated returns (bool) {
+    function attackArmy(address _targetArmyOwner) external nonReentrant armyNotCreated returns (address) {
         if (!createdArmyOrNot[_targetArmyOwner] || _targetArmyOwner == msg.sender) {
             revert battleWar__TargetArmyNotFind();
         }
@@ -311,7 +339,8 @@ contract CreateBattleArmy is TestDateTime, ERC721URIStorage, ReentrancyGuard, Ow
         // string memory str_getYear = uintToString(m_getYear);
         // string memory str_getMonth = uintToString(m_getMonth);
         // string memory str_getDay = uintToString(m_getDay);
-        string memory dateInString = concatStrings(uintToString(m_getDay), "/", uintToString(m_getMonth), "/", uintToString(m_getYear));
+        string memory dateInString =
+            concatStrings(uintToString(m_getDay), "/", uintToString(m_getMonth), "/", uintToString(m_getYear));
         s_timeStamps.push(dateInString);
 
         return changeStatesOfArmy(number, count, msg.sender, _targetArmyOwner);
@@ -319,7 +348,7 @@ contract CreateBattleArmy is TestDateTime, ERC721URIStorage, ReentrancyGuard, Ow
 
     function changeStatesOfArmy(uint256 number, uint256 count, address _owner, address _targetArmyOwner)
         private
-        returns (bool)
+        returns (address winner)
     {
         army storage s_myArmy = ownerArmy[_owner];
         army storage s_targetArmy = ownerArmy[_targetArmyOwner];
@@ -327,21 +356,27 @@ contract CreateBattleArmy is TestDateTime, ERC721URIStorage, ReentrancyGuard, Ow
             s_myArmy.winCount++;
             s_targetArmy.lossCount++;
             s_myArmy.lastAttackTime = block.timestamp;
+            s_winners.push(_owner);
             if (s_myArmy.winCount % 5 == 0) {
                 mint(s_myArmy.winCount, _owner);
             }
             balanceOfPlayer[_owner] += WINNING_AMOUNT_FOR_OWNER;
             reduceLessArmy(_owner);
             // reduceLessArmy(_targetArmyOwner);
-            return true;
+            emit attackArmyEvent(_owner, _targetArmyOwner, _owner, WINNING_AMOUNT_FOR_OWNER, s_winners.length);
+            return _owner;
         } else {
             s_targetArmy.winCount++;
             s_myArmy.lossCount++;
             s_myArmy.lastAttackTime = block.timestamp;
+            s_winners.push(_targetArmyOwner);
             balanceOfPlayer[_targetArmyOwner] += WINNING_AMOUNT_FOR_TARGET__OWNER;
             reduceMoreArmy(_owner);
             // reduceLessArmy(_targetArmyOwner);
-            return false;
+            emit attackArmyEvent(
+                _owner, _targetArmyOwner, _targetArmyOwner, WINNING_AMOUNT_FOR_TARGET__OWNER, s_winners.length
+            );
+            return _targetArmyOwner;
         }
     }
 
@@ -364,6 +399,13 @@ contract CreateBattleArmy is TestDateTime, ERC721URIStorage, ReentrancyGuard, Ow
         s_myArmy.health -= 2;
     }
 
+    function change_eth_offer_amount(uint newPrice) external onlyOwner nonReentrant {
+        if(newPrice <= 0) {
+            revert BattleWar__ZeroPrice();
+        }
+        i_ETHER_OFFER_AMOUNT = newPrice;
+    }
+
     /* ----------------------------- GETTER FUNCTIONS ----------------------------- */
 
     function get_TokenURI(uint256 _tokenId) external view returns (string memory) {
@@ -383,6 +425,10 @@ contract CreateBattleArmy is TestDateTime, ERC721URIStorage, ReentrancyGuard, Ow
 
     function get_QUANTITY_OF_PLAYERS() external pure returns (uint256) {
         return QUANTITY_OF_PLAYERS;
+    }
+
+    function get_totalArmyCount() external view returns (uint256) {
+        return _totalArmyCount.current();
     }
 
     function get_INITIAL_REWARD_AMOUNT() external pure returns (uint256) {
@@ -427,6 +473,10 @@ contract CreateBattleArmy is TestDateTime, ERC721URIStorage, ReentrancyGuard, Ow
 
     function get_s_attackers() external view returns (address[] memory) {
         return s_attackers;
+    }
+
+    function get_s_winners() external view returns (address[] memory) {
+        return s_winners;
     }
 
     function get_s_targets() external view returns (address[] memory) {
