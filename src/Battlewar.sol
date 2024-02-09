@@ -102,7 +102,7 @@ contract BattleWar is TestDateTime, ERC721URIStorage, ReentrancyGuard, Ownable {
     fallback() external payable {}
 
     /* ---------------------------- MINT REWARD ---------------------------- */
-    string[25] private _tokenURI = ["a", "b", "c"];
+    string[25] private _tokenURI = ["a", "b", "c", "d", "e"];
 
     function mint(uint256 _winCount, address _owner) private nonReentrant returns (uint256) {
         uint256 tokenId = _tokenIdCounter.current();
